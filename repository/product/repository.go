@@ -14,6 +14,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"golang.org/x/exp/slog"
 	"reflect"
+	"time"
 )
 
 type storeRepository struct {
@@ -149,7 +150,7 @@ func (r *storeRepository) Store(ctx context.Context, dataStore *product.Product)
 
 func (r *storeRepository) Update(ctx context.Context, dataStore *product.Product) error {
 	// Tracing
-	ctx, span := infrastructure.Tracer().Start(ctx, "repository:store:Update")
+	ctx, span := infrastructure.Tracer().Start(ctx, "repository:brand:Update")
 	defer span.End()
 
 	updatedStore := bson.D{}
@@ -186,7 +187,7 @@ func (r *storeRepository) Delete(ctx context.Context, code string) error {
 
 func (r *storeRepository) DeleteById(ctx context.Context, id string) error {
 	// Tracing
-	ctx, span := infrastructure.Tracer().Start(ctx, "repository:store:DeleteById")
+	ctx, span := infrastructure.Tracer().Start(ctx, "repository:brand:DeleteById")
 	defer span.End()
 
 	if id == "" {
@@ -195,24 +196,26 @@ func (r *storeRepository) DeleteById(ctx context.Context, id string) error {
 
 	collection := r.client.Database(r.db).Collection(r.collection)
 
-	objectID, err2 := primitive.ObjectIDFromHex(id)
-	if err2 != nil {
-		return err2
+	objectID, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return errors.New("ID is not valid")
 	}
-	result := collection.FindOne(ctx, bson.M{"_id": objectID})
 
+	filter := bson.M{"_id": objectID, "deleted_at": bson.M{"$exists": false}}
+
+	update := bson.M{
+		"$set": bson.M{
+			"deleted_at": time.Now().Unix(),
+		},
+	}
+
+	result := collection.FindOneAndUpdate(ctx, filter, update)
 	if result.Err() != nil {
 		if errors.Is(result.Err(), mongo.ErrNoDocuments) {
-			return errors.New("store not found")
+			return nil
 		}
 		return result.Err()
 	}
 
-	_, err := collection.DeleteOne(ctx, bson.M{"_id": objectID})
-	if err != nil {
-		return err
-	}
-
 	return nil
-
 }
